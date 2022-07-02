@@ -299,6 +299,7 @@ impl<'a> Binary<'a> {
     /// # Errors
     ///
     /// If `term` is not an `iolist`, an error will be returned.
+    #[inline]
     pub fn from_iolist(term: Term<'a>) -> Result<Self, Error> {
         let mut binary = MaybeUninit::uninit();
         if unsafe {
@@ -319,11 +320,13 @@ impl<'a> Binary<'a> {
 
     /// Returns an Erlang term representation of `self`.
     #[allow(clippy::wrong_self_convention)]
+    #[inline]
     pub fn to_term<'b>(&self, env: Env<'b>) -> Term<'b> {
         self.term.in_env(env)
     }
 
     /// Extracts a slice containing the entire binary.
+    #[inline]
     pub fn as_slice(&self) -> &'a [u8] {
         unsafe { ::std::slice::from_raw_parts(self.inner.data, self.inner.size) }
     }
@@ -336,6 +339,7 @@ impl<'a> Binary<'a> {
     /// # Errors
     ///
     /// If `offset + length` is out of bounds, an error will be returned.
+    #[inline]
     pub fn make_subbinary(&self, offset: usize, length: usize) -> NifResult<Binary<'a>> {
         let min_len = length.checked_add(offset);
         if min_len.ok_or(Error::BadArg)? > self.inner.size {

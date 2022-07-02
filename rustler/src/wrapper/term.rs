@@ -40,5 +40,5 @@ pub fn fmt(term: NIF_TERM, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
     unsafe {
         bytes.set_len(n);
     }
-    f.write_str(&String::from_utf8_lossy(&bytes))
+    f.write_str(simdutf8::basic::from_utf8(&*bytes).unwrap())
 }

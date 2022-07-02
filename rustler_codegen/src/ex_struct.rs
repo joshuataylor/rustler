@@ -175,6 +175,7 @@ fn gen_encoder(
     gen
 }
 
+#[inline]
 fn get_module(ctx: &Context, add_exception: bool) -> String {
     let expect_message = if add_exception {
         "NifException requires a 'module' attribute"

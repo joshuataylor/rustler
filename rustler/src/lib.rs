@@ -23,6 +23,8 @@
 //! For more information about this, see [the documentation for
 //! rustler](https://hexdocs.pm/rustler).
 
+extern crate core;
+
 #[doc(hidden)]
 pub mod wrapper;
 
