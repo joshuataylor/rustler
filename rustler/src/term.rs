@@ -11,7 +11,6 @@ use std::hash::{Hash, Hasher};
 /// Term is cloneable and copyable, but it can not exist outside of the lifetime of the Env
 /// that owns it.
 #[derive(Clone, Copy)]
-#[repr(C)]
 pub struct Term<'a> {
     term: NIF_TERM,
     env: Env<'a>,
@@ -90,6 +89,7 @@ impl<'a> Term<'a> {
     /// is needed.
     ///
     /// [`decode`]: #method.decode
+    #[inline]
     pub fn decode_as_binary(self) -> NifResult<Binary<'a>> {
         if self.is_binary() {
             return Binary::from_term(self);
