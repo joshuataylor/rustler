@@ -10,11 +10,9 @@
 use regex::Regex;
 use std::fmt::Write;
 use std::path::Path;
-use std::process::Command;
 use std::{env, fs};
 
 const SNIPPET_NAME: &str = "nif_api.snippet";
-const SUPPORTED_VERSIONS: [(u32, u32); 3] = [(2, 14), (2, 15), (2, 16)];
 
 trait ApiBuilder {
     fn func(&mut self, ret: &str, name: &str, args: &str);
@@ -22,7 +20,7 @@ trait ApiBuilder {
     fn dummy(&mut self, name: &str);
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum OsFamily {
     Unix,
     Win,
@@ -846,6 +844,7 @@ fn build_api(b: &mut dyn ApiBuilder, opts: &GenerateOptions) {
         b.func("c_int", "enif_make_map_from_arrays", "env: *mut ErlNifEnv, keys: *const ERL_NIF_TERM, values: *const ERL_NIF_TERM, cnt: usize, map_out: *mut ERL_NIF_TERM");
     }
 
+    // 2.15 was introduced in OTP 22
     if opts.nif_version >= (2, 15) {
         b.func(
             "ErlNifTermType",
@@ -862,94 +861,64 @@ fn build_api(b: &mut dyn ApiBuilder, opts: &GenerateOptions) {
         );
     }
 
+    // 2.16 was introduced in OTP 24
     if opts.nif_version >= (2, 16) {
         b.func("*const ErlNifResourceType", "enif_init_resource_type", "env: *mut ErlNifEnv, name_str: *const c_uchar, init: *const ErlNifResourceTypeInit, flags: ErlNifResourceFlags, tried: *mut ErlNifResourceFlags");
         b.func("c_int", "enif_dynamic_resource_call", "env: *mut ErlNifEnv, module: ERL_NIF_TERM, name: ERL_NIF_TERM, rsrc: ERL_NIF_TERM, call_data: *const c_void");
     }
-}
 
-fn parse_nif_version(version: &str) -> (u32, u32) {
-    let parts: Vec<Result<_, _>> = version
-        .split('.')
-        .take(2)
-        .map(|n| n.parse::<u32>())
-        .collect();
-
-    match &parts[..] {
-        [Ok(major), Ok(minor)] => (*major, *minor),
-        _other => panic!("The RUSTLER_NIF_VERSION is not a valid version"),
+    // 2.17 was introduced in OTP 26
+    if opts.nif_version >= (2, 17) {
+        b.func(
+            "c_int",
+            "enif_set_option",
+            "env: *mut ErlNifEnv, opt: ErlNifOption",
+        );
+        b.func("c_int", "enif_get_string_length", "env: *mut ErlNifEnv, list: ERL_NIF_TERM, len: *mut c_uint, encoding: ErlNifCharEncoding");
+        b.func("c_int", "enif_make_new_atom", "env: *mut ErlNifEnv, name: *const c_uchar, atom: *mut ERL_NIF_TERM, encoding: ErlNifCharEncoding");
+        b.func("c_int", "enif_make_new_atom_len", "env: *mut ErlNifEnv, name: *const c_uchar, len: size_t, atom: *mut ERL_NIF_TERM, encoding: ErlNifCharEncoding");
     }
 }
 
-fn get_version_from_erl() -> Option<String> {
-    let args = vec![
-        "-noshell",
-        "-eval",
-        r#"io:format("~s~n", [erlang:system_info(nif_version)]), init:stop()."#,
-    ];
+include!("build_common.rs");
+use common::*;
 
-    let version = Command::new("erl").args(&args).output().ok()?.stdout;
-
-    let version = String::from_utf8(version).ok()?;
-
-    Some(version.trim().into())
-}
-
-fn erl_nif_version_or_latest() -> (u32, u32) {
-    match get_version_from_erl() {
-        Some(nif_version) => {
-            eprintln!(
-                "RUSTLER_NIF_VERSION env var is not set. Using version from Erlang: {}",
-                nif_version
-            );
-            parse_nif_version(nif_version.as_str())
-        }
-        None => {
-            let latest_version: (u32, u32) = SUPPORTED_VERSIONS.last().unwrap().to_owned();
-            eprintln!(
-                "RUSTLER_NIF_VERSION env var is not set and `erl` command is not found. Using version {}.{}",
-                latest_version.0, latest_version.1
-            );
-            latest_version
+fn get_nif_version_from_features() -> (u32, u32) {
+    for major in ((MIN_SUPPORTED_VERSION.0)..=(MAX_SUPPORTED_VERSION.0)).rev() {
+        for minor in ((MIN_SUPPORTED_VERSION.1)..=(MAX_SUPPORTED_VERSION.1)).rev() {
+            if env::var(format!("CARGO_FEATURE_NIF_VERSION_{}_{}", major, minor)).is_ok() {
+                return (major, minor);
+            }
         }
     }
+    panic!(
+        "At least the minimal feature nif_version_{}_{} has to be defined",
+        MIN_SUPPORTED_VERSION.0, MIN_SUPPORTED_VERSION.1
+    );
 }
 
 fn main() {
-    let nif_version = match env::var("RUSTLER_NIF_VERSION") {
-        Ok(val) => parse_nif_version(&val),
-        Err(_err) => erl_nif_version_or_latest(),
+    let nif_version = handle_nif_version_from_env().unwrap_or_else(get_nif_version_from_features);
+
+    let target_family = if cfg!(target_family = "windows") {
+        OsFamily::Win
+    } else if cfg!(target_family = "unix") {
+        OsFamily::Unix
+    } else {
+        panic!("Unsupported Operational System Family")
     };
 
-    if !SUPPORTED_VERSIONS.contains(&nif_version) {
-        panic!(
-            "The NIF version given from RUSTLER_NIF_VERSION is not supported: {}.{}",
-            nif_version.0, nif_version.1
-        );
-    }
-
-    let target_pointer_width = env::var("CARGO_CFG_TARGET_POINTER_WIDTH");
-
-    // It's unlikely that we are going to cross compile to different OS,
-    // but this guarantees that we choose the correct OS APIs if we do so.
-    let target_family_or_current =
-        env::var("CARGO_CFG_TARGET_FAMILY").unwrap_or_else(|_| env::consts::FAMILY.to_string());
-
-    let target_family = match &target_family_or_current as &str {
-        "windows" => OsFamily::Win,
-        "unix" => OsFamily::Unix,
-        other => panic!("Unsupported Operational System Family: {}", other),
-    };
-
-    let ulong_size = match (target_pointer_width, target_family) {
-        (_, OsFamily::Win) => 4,
-        (Ok(ref val), _) if val == "32" => 4,
-        (Ok(ref val), _) if val == "64" => 8,
-        (Ok(ref val), _) => panic!("Unsupported target pointer width: {}", val),
-        (Err(err), _) => panic!(
-            "An error occurred while determining the pointer width to compile `rustler_sys` for:\n\n{:?}\n\nPlease report a bug.",
-            err
-        ),
+    let ulong_size = match target_family {
+        OsFamily::Win => 4,
+        OsFamily::Unix => {
+            if cfg!(target_pointer_width = "32") {
+                4
+            } else if cfg!(target_pointer_width = "64") {
+                8
+            } else {
+                panic!("Unsupported target pointer width")
+            }
+        }
     };
 
     let opts = GenerateOptions {
@@ -964,10 +933,8 @@ fn main() {
         .unwrap();
 
     let dest_path = Path::new(&out_dir).join(SNIPPET_NAME);
-
-    fs::write(&dest_path, &api).unwrap();
+    fs::write(dest_path, api).unwrap();
 
     // The following lines are important to tell Cargo to recompile if something changes.
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=RUSTLER_NIF_VERSION");
 }

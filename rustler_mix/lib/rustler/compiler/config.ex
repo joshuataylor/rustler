@@ -19,6 +19,7 @@ defmodule Rustler.Compiler.Config do
             features: [],
             lib: true,
             load_data: 0,
+            load_data_fun: nil,
             load_from: nil,
             mode: :release,
             otp_app: nil,
@@ -43,7 +44,7 @@ defmodule Rustler.Compiler.Config do
     defaults = %Config{
       crate: crate,
       load_from: {otp_app, "priv/native/lib#{crate}"},
-      mode: build_mode(Mix.env()),
+      mode: :release,
       otp_app: otp_app,
       path: "native/#{crate}",
       target_dir: Application.app_dir(otp_app, "native/#{crate}")
@@ -138,9 +139,6 @@ defmodule Rustler.Compiler.Config do
     |> Enum.filter(&(&1["name"] == name))
     |> List.first()
   end
-
-  defp build_mode(env) when env in [:prod, :bench], do: :release
-  defp build_mode(_), do: :debug
 
   defp to_atom(name) when is_binary(name),
     do: String.to_atom(name)

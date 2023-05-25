@@ -1,10 +1,7 @@
-// TODO When we settle for a minimum version of Rust >= 1.42, remove this.
-#![allow(clippy::match_like_matches_macro)]
-
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Data, Field, Fields, Ident, Lit, Meta, NestedMeta, Variant};
+use syn::{Data, Field, Fields, Ident, Lit, Meta, Variant};
 
 use super::RustlerAttr;
 
@@ -16,7 +13,7 @@ use super::RustlerAttr;
 pub(crate) struct Context<'a> {
     pub attrs: Vec<RustlerAttr>,
     pub ident: &'a proc_macro2::Ident,
-    pub ident_with_lifetime: proc_macro2::TokenStream,
+    pub generics: &'a syn::Generics,
     pub variants: Option<Vec<&'a Variant>>,
     pub struct_fields: Option<Vec<&'a Field>>,
     pub is_tuple_struct: bool,
@@ -39,19 +36,6 @@ impl<'a> Context<'a> {
             attrs.push(RustlerAttr::Decode);
         }
 
-        let has_lifetime = match ast.generics.lifetimes().count() {
-            0 => false,
-            1 => true,
-            _ => panic!("Struct can only have one lifetime argument"),
-        };
-
-        let ident = &ast.ident;
-        let ident_with_lifetime = if has_lifetime {
-            quote! { #ident <'a> }
-        } else {
-            quote! { #ident }
-        };
-
         let variants = match ast.data {
             Data::Enum(ref data_enum) => Some(data_enum.variants.iter().collect()),
             _ => None,
@@ -63,17 +47,14 @@ impl<'a> Context<'a> {
         };
 
         let is_tuple_struct = match ast.data {
-            Data::Struct(ref data_struct) => match data_struct.fields {
-                Fields::Unnamed(_) => true,
-                _ => false,
-            },
+            Data::Struct(ref data_struct) => matches!(data_struct.fields, Fields::Unnamed(_)),
             _ => false,
         };
 
         Self {
             attrs,
-            ident,
-            ident_with_lifetime,
+            ident: &ast.ident,
+            generics: &ast.generics,
             variants,
             struct_fields,
             is_tuple_struct,
@@ -87,18 +68,16 @@ impl<'a> Context<'a> {
 
     #[inline]
     pub fn encode(&self) -> bool {
-        self.attrs.iter().any(|attr| match attr {
-            RustlerAttr::Encode => true,
-            _ => false,
-        })
+        self.attrs
+            .iter()
+            .any(|attr| matches!(attr, RustlerAttr::Encode))
     }
 
     #[inline]
     pub fn decode(&self) -> bool {
-        self.attrs.iter().any(|attr| match attr {
-            RustlerAttr::Decode => true,
-            _ => false,
-        })
+        self.attrs
+            .iter()
+            .any(|attr| matches!(attr, RustlerAttr::Decode))
     }
 
     #[inline]
@@ -166,24 +145,22 @@ impl<'a> Context<'a> {
 
     #[inline]
     fn encode_decode_attr_set(attrs: &[RustlerAttr]) -> bool {
-        attrs.iter().any(|attr| match attr {
-            RustlerAttr::Encode => true,
-            RustlerAttr::Decode => true,
-            _ => false,
-        })
+        attrs
+            .iter()
+            .any(|attr| matches!(attr, RustlerAttr::Encode | RustlerAttr::Decode))
     }
 
     #[inline]
     fn get_rustler_attrs(attr: &syn::Attribute) -> Vec<RustlerAttr> {
-        attr.path
+        attr.path()
             .segments
             .iter()
             .filter_map(|segment| {
-                let meta = attr.parse_meta().expect("can parse meta");
+                let meta = &attr.meta;
                 match segment.ident.to_string().as_ref() {
-                    "rustler" => Some(Context::parse_rustler(&meta)),
-                    "tag" => Context::try_parse_tag(&meta),
-                    "module" => Context::try_parse_module(&meta),
+                    "rustler" => Some(Context::parse_rustler(meta)),
+                    "tag" => Context::try_parse_tag(meta),
+                    "module" => Context::try_parse_module(meta),
                     _ => None,
                 }
             })
@@ -194,24 +171,20 @@ impl<'a> Context<'a> {
     #[inline]
     fn parse_rustler(meta: &Meta) -> Vec<RustlerAttr> {
         if let Meta::List(ref list) = meta {
-            return list
-                .nested
-                .iter()
-                .map(Context::parse_nested_rustler)
-                .collect();
-        }
+            let mut attrs: Vec<RustlerAttr> = vec![];
+            let _ = list.parse_nested_meta(|nested_meta| {
+                if nested_meta.path.is_ident("encode") {
+                    attrs.push(RustlerAttr::Encode);
+                    Ok(())
+                } else if nested_meta.path.is_ident("decode") {
+                    attrs.push(RustlerAttr::Decode);
+                    Ok(())
+                } else {
+                    Err(nested_meta.error("Expected encode and/or decode in rustler attribute"))
+                }
+            });
 
-        panic!("Expected encode and/or decode in rustler attribute");
-    }
-
-    #[inline]
-    fn parse_nested_rustler(nested: &NestedMeta) -> RustlerAttr {
-        if let NestedMeta::Meta(Meta::Path(ref path)) = nested {
-            match path.segments[0].ident.to_string().as_ref() {
-                "encode" => return RustlerAttr::Encode,
-                "decode" => return RustlerAttr::Decode,
-                other => panic!("Unexpected literal {}", other),
-            }
+            return attrs;
         }
 
         panic!("Expected encode and/or decode in rustler attribute");
@@ -220,8 +193,12 @@ impl<'a> Context<'a> {
     #[inline]
     fn try_parse_tag(meta: &Meta) -> Option<Vec<RustlerAttr>> {
         if let Meta::NameValue(ref name_value) = meta {
-            if let Lit::Str(ref tag) = name_value.lit {
-                return Some(vec![RustlerAttr::Tag(tag.value())]);
+            let expr = &name_value.value;
+
+            if let syn::Expr::Lit(lit_expr) = expr {
+                if let Lit::Str(ref tag) = lit_expr.lit {
+                    return Some(vec![RustlerAttr::Tag(tag.value())]);
+                }
             }
         }
         panic!("Cannot parse module")
@@ -230,9 +207,13 @@ impl<'a> Context<'a> {
     #[inline]
     fn try_parse_module(meta: &Meta) -> Option<Vec<RustlerAttr>> {
         if let Meta::NameValue(name_value) = meta {
-            if let Lit::Str(ref module) = name_value.lit {
-                let ident = format!("Elixir.{}", module.value());
-                return Some(vec![RustlerAttr::Module(ident)]);
+            let expr = &name_value.value;
+
+            if let syn::Expr::Lit(lit_expr) = expr {
+                if let Lit::Str(ref module) = lit_expr.lit {
+                    let ident = format!("Elixir.{}", module.value());
+                    return Some(vec![RustlerAttr::Module(ident)]);
+                }
             }
         }
         panic!("Cannot parse tag")

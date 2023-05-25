@@ -12,6 +12,7 @@ mod test_range;
 mod test_resource;
 mod test_term;
 mod test_thread;
+mod test_tuple;
 
 rustler::init!(
     "Elixir.RustlerTest",
@@ -20,6 +21,7 @@ rustler::init!(
         test_primitives::add_i32,
         test_primitives::echo_u8,
         test_primitives::option_inc,
+        test_primitives::erlang_option_inc,
         test_primitives::result_to_int,
         test_list::sum_list,
         test_list::make_list,
@@ -38,6 +40,8 @@ rustler::init!(
         test_resource::resource_get_integer_field,
         test_resource::resource_make_immutable,
         test_resource::resource_immutable_count,
+        test_resource::resource_make_with_binaries,
+        test_resource::resource_make_binaries,
         test_atom::atom_to_string,
         test_atom::atom_equals_ok,
         test_atom::binary_to_atom,
@@ -83,6 +87,12 @@ rustler::init!(
         test_error::raise_term_with_atom_error,
         test_error::term_with_tuple_error,
         test_nif_attrs::can_rename,
+        test_tuple::add_from_tuple,
+        test_tuple::add_one_to_tuple,
+        test_tuple::join_tuple_elements,
+        test_tuple::maybe_add_one_to_tuple,
+        test_tuple::add_i32_from_tuple,
+        test_tuple::greeting_person_from_tuple,
         test_codegen::reserved_keywords::reserved_keywords_type_echo
     ],
     load = load

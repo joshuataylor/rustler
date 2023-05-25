@@ -102,7 +102,7 @@ use std::{
 /// See [module-level doc](index.html) for more information.
 pub struct OwnedBinary(ErlNifBinary);
 
-impl<'a> OwnedBinary {
+impl OwnedBinary {
     pub unsafe fn from_raw(inner: ErlNifBinary) -> OwnedBinary {
         OwnedBinary(inner)
     }
@@ -230,13 +230,15 @@ impl Drop for OwnedBinary {
 }
 
 unsafe impl Send for OwnedBinary {}
+unsafe impl Sync for OwnedBinary {}
 
 /// An immutable smart-pointer to an Erlang binary.
 ///
 /// See [module-level doc](index.html) for more information.
 #[derive(Copy, Clone)]
 pub struct Binary<'a> {
-    inner: ErlNifBinary,
+    buf: *const u8,
+    size: usize,
     term: Term<'a>,
 }
 
@@ -257,7 +259,8 @@ impl<'a> Binary<'a> {
             )
         };
         Binary {
-            inner: owned.0,
+            buf: owned.0.data,
+            size: owned.0.size,
             term,
         }
     }
@@ -291,10 +294,24 @@ impl<'a> Binary<'a> {
         {
             return Err(Error::BadArg);
         }
+
+        let binary = unsafe { binary.assume_init() };
         Ok(Binary {
-            inner: unsafe { binary.assume_init() },
+            buf: binary.data,
+            size: binary.size,
             term,
         })
+    }
+
+    /// Creates a Binary from a `term` and the associated slice
+    ///
+    /// The `term` *must* be constructed from the given slice, it is not checked.
+    pub(crate) unsafe fn from_term_and_slice(term: Term<'a>, binary: &[u8]) -> Self {
+        Binary {
+            term,
+            buf: binary.as_ptr(),
+            size: binary.len(),
+        }
     }
 
     /// Creates a `Binary` from `term`.
@@ -315,8 +332,11 @@ impl<'a> Binary<'a> {
         {
             return Err(Error::BadArg);
         }
+
+        let binary = unsafe { binary.assume_init() };
         Ok(Binary {
-            inner: unsafe { binary.assume_init() },
+            buf: binary.data,
+            size: binary.size,
             term,
         })
     }
@@ -331,7 +351,7 @@ impl<'a> Binary<'a> {
     /// Extracts a slice containing the entire binary.
     #[inline]
     pub fn as_slice(&self) -> &'a [u8] {
-        unsafe { ::std::slice::from_raw_parts(self.inner.data, self.inner.size) }
+        unsafe { ::std::slice::from_raw_parts(self.buf, self.size) }
     }
 
     /// Returns a new view into the same binary.
@@ -345,10 +365,24 @@ impl<'a> Binary<'a> {
     #[inline]
     pub fn make_subbinary(&self, offset: usize, length: usize) -> NifResult<Binary<'a>> {
         let min_len = length.checked_add(offset);
-        if min_len.ok_or(Error::BadArg)? > self.inner.size {
+        if min_len.ok_or(Error::BadArg)? > self.size {
             return Err(Error::BadArg);
         }
 
+        Ok(unsafe { self.make_subbinary_unchecked(offset, length) })
+    }
+
+    /// Returns a new view into the same binary.
+    ///
+    /// This method is an unsafe variant of `Binary::make_subbinary` in that it does not check for
+    /// `offset + length < self.len()` and always returns a `Binary`.
+    ///
+    /// # Safety
+    ///
+    /// If `offset + length` is out of bounds, this call results in *undefined behavior*. The
+    /// caller has to ensure that `offset + length < self.len()`.
+    #[allow(unused_unsafe)]
+    pub unsafe fn make_subbinary_unchecked(&self, offset: usize, length: usize) -> Binary<'a> {
         let raw_term = unsafe {
             rustler_sys::enif_make_sub_binary(
                 self.term.get_env().as_c_arg(),
@@ -358,8 +392,12 @@ impl<'a> Binary<'a> {
             )
         };
         let term = unsafe { Term::new(self.term.get_env(), raw_term) };
-        // This should never fail, as we are always passing in a binary term.
-        Ok(Binary::from_term(term).ok().unwrap())
+
+        Binary {
+            buf: unsafe { self.buf.add(offset) },
+            size: length,
+            term,
+        }
     }
 }
 

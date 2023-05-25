@@ -20,7 +20,7 @@ name = "rustler_sys"
 # When depending on this crate, you should ALWAYS
 # use a tilde requirements with AT LEAST `~MAJOR.MINOR`.
 # Example: "~2.0"
-version = "2.2.0"
+version = "2.2.1"
 
 authors = ["Daniel Goertzen <daniel.goertzen@gmail.com>"]
 description = "Create Erlang NIF modules in Rust using the C NIF API."
@@ -33,6 +33,13 @@ edition = "2018"
 build = "build.rs"
 
 categories = ["external-ffi-bindings"]
+
+[features]
+default = ["nif_version_2_15"]
+nif_version_2_14 = []
+nif_version_2_15 = ["nif_version_2_14"]
+nif_version_2_16 = ["nif_version_2_15"]
+nif_version_2_17 = ["nif_version_2_16"]
 
 [dependencies]
 unreachable = "1.0"

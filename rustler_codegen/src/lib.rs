@@ -3,6 +3,7 @@
 use proc_macro::TokenStream;
 
 mod context;
+mod encode_decode_templates;
 mod ex_struct;
 mod init;
 mod map;
@@ -45,7 +46,11 @@ enum RustlerAttr {
 ///     a / b
 /// }
 ///
-/// rustler::init!("Elixir.Math", [add, sub, mul, div], Some(load));
+/// fn load(env: Env, _term: Term) -> bool {
+///     true
+/// }
+///
+/// rustler::init!("Elixir.Math", [add, sub, mul, div], load = load);
 /// ```
 #[proc_macro]
 pub fn init(input: TokenStream) -> TokenStream {
@@ -86,10 +91,17 @@ pub fn init(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 pub fn nif(args: TokenStream, input: TokenStream) -> TokenStream {
-    let args = syn::parse_macro_input!(args as syn::AttributeArgs);
+    let mut nif_attributes = nif::NifAttributes::default();
+
+    if !args.is_empty() {
+        let nif_macro_parser = syn::meta::parser(|meta| nif_attributes.parse(meta));
+
+        syn::parse_macro_input!(args with nif_macro_parser);
+    }
+
     let input = syn::parse_macro_input!(input as syn::ItemFn);
 
-    nif::transcoder_decorator(args, input).into()
+    nif::transcoder_decorator(nif_attributes, input).into()
 }
 
 /// Derives implementations for the `Encoder` and `Decoder` traits

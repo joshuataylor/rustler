@@ -222,7 +222,7 @@ macro_rules! atoms {
     };
     { @internal_make_atom($env:ident, $name:ident = $str:expr) } => {
         $crate::types::atom::Atom::from_str($env, $str)
-            .ok().expect("rustler::atoms!: bad atom string")
+            .expect("rustler::atoms!: bad atom string")
     };
 }
 
@@ -270,6 +270,10 @@ atoms! {
 
     /// The `nil` atom.
     nil,
+
+    /// The `undefined` atom, commonly used in Erlang libraries to express the
+    /// absence of value.
+    undefined,
 
     /// The `ok` atom, commonly used in success tuples.
     ok,

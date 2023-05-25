@@ -3,7 +3,7 @@ defmodule RustlerTest.BinaryTest do
 
   test "subbinary creation" do
     assert RustlerTest.make_shorter_subbinary("test") == "es"
-    assert_raise ErlangError, fn -> RustlerTest.make_shorter_subbinary("t") end
+    assert_raise ArgumentError, fn -> RustlerTest.make_shorter_subbinary("t") end
   end
 
   test "parse integer from binary" do
@@ -28,6 +28,8 @@ defmodule RustlerTest.BinaryTest do
   test "unowned binary to owned" do
     assert RustlerTest.unowned_to_owned("test") == <<1, "est">>
     assert RustlerTest.unowned_to_owned("whatisgoingon") == <<1, "hatisgoingon">>
+    # Notice that this also panic, but we are suppressing the message
+    # at the function implementation.
     assert_raise ErlangError, fn -> RustlerTest.unowned_to_owned("") end
   end
 

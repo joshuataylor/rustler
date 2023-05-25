@@ -95,7 +95,7 @@ impl<'a> Decoder<'a> for ListIterator<'a> {
 //    }
 //}
 
-impl<'a, T> Encoder for Vec<T>
+impl<T> Encoder for Vec<T>
 where
     T: Encoder,
 {
@@ -117,7 +117,7 @@ where
     }
 }
 
-impl<'a, T> Encoder for [T]
+impl<T> Encoder for [T]
 where
     T: Encoder,
 {

@@ -1,6 +1,6 @@
 defmodule RustlerTest.ResourceTest do
   use ExUnit.Case, async: true
-  use Bitwise
+  import Bitwise
 
   test "resource creation and interaction" do
     resource = RustlerTest.resource_make()
@@ -34,5 +34,14 @@ defmodule RustlerTest.ResourceTest do
 
     # Erlang's exact GC should have cleaned all that up.
     assert RustlerTest.resource_immutable_count() == 0
+  end
+
+  test "resource binaries" do
+    res = RustlerTest.resource_make_with_binaries()
+
+    {slice, vec, static} = RustlerTest.resource_make_binaries(res)
+
+    assert slice == vec
+    assert vec == static
   end
 end
